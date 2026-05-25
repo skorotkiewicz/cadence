@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "cadence")]
-#[command(about = "Track markers in source files")]
+#[command(about = "Track markers in source files", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
