@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::db::Database;
 
 /// Update source files with new statuses from database
-pub fn update_source_files(dir: &Path, db: &Database) -> Result<()> {
+pub fn update_source_files(dir: &Path, db: &Database, marker_prefix: &str) -> Result<()> {
     for item in &db.items {
         let file_path = dir.join(&item.file);
         if !file_path.exists() {
@@ -22,8 +22,8 @@ pub fn update_source_files(dir: &Path, db: &Database) -> Result<()> {
             let line = &lines[line_idx];
 
             // Find and replace the status in the marker
-            // Pattern: $$type:id:old_status -> $$type:id:new_status
-            let pattern = format!("$${}:{}:", item.item_type, item.id);
+            // Pattern: <prefix>type:id:old_status -> <prefix>type:id:new_status
+            let pattern = format!("{}{}:{}:", marker_prefix, item.item_type, item.id);
 
             if let Some(pos) = line.find(&pattern) {
                 // Find the end of the status (space or end of marker)
@@ -35,8 +35,14 @@ pub fn update_source_files(dir: &Path, db: &Database) -> Result<()> {
 
                 if old_status != item.status {
                     // Replace the old status with new status
-                    let search_str = format!("$${}:{}:{}", item.item_type, item.id, old_status);
-                    let replace_str = format!("$${}:{}:{}", item.item_type, item.id, item.status);
+                    let search_str = format!(
+                        "{}{}:{}:{}",
+                        marker_prefix, item.item_type, item.id, old_status
+                    );
+                    let replace_str = format!(
+                        "{}{}:{}:{}",
+                        marker_prefix, item.item_type, item.id, item.status
+                    );
                     let new_line = line.replacen(&search_str, &replace_str, 1);
                     lines[line_idx] = new_line;
 
@@ -81,7 +87,7 @@ mod tests {
             content: "fix this".to_string(),
         });
 
-        update_source_files(temp_dir.path(), &db).unwrap();
+        update_source_files(temp_dir.path(), &db, "$$").unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "// $$todo:1:done fix this\n");
@@ -108,9 +114,35 @@ mod tests {
             content: "fix this".to_string(),
         });
 
-        update_source_files(temp_dir.path(), &db).unwrap();
+        update_source_files(temp_dir.path(), &db, "$$").unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("$$todo:1:done"));
+    }
+
+    #[test]
+    fn test_update_source_files_uses_marker_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir(&src_dir).unwrap();
+
+        let file_path = src_dir.join("main.rs");
+        fs::write(&file_path, "// @@todo:1:open fix this\n").unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 1,
+            item_type: "todo".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 1,
+            status: "done".to_string(),
+            content: "fix this".to_string(),
+        });
+
+        update_source_files(temp_dir.path(), &db, "@@").unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "// @@todo:1:done fix this\n");
     }
 }

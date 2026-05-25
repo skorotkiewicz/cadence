@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
+use crate::DEFAULT_MARKER_PREFIX;
+
 pub fn init_cadence(dir: &Path) -> Result<()> {
     let cadence_dir = dir.join(".cadence");
 
@@ -10,9 +12,10 @@ pub fn init_cadence(dir: &Path) -> Result<()> {
         .with_context(|| format!("Failed to create directory: {:?}", cadence_dir))?;
 
     // Create config.yml
-    let config_content = r#"# Cadence configuration
-marker_prefix: "$$"
-"#;
+    let config_content = format!(
+        "# Cadence configuration\nmarker_prefix: \"{}\"\n",
+        DEFAULT_MARKER_PREFIX
+    );
     fs::write(cadence_dir.join("config.yml"), config_content)
         .with_context(|| "Failed to write config.yml")?;
 

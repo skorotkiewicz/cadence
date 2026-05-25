@@ -42,6 +42,8 @@ Add markers to any source file:
 // $$hack remove temporary branch
 ```
 
+The prefix comes from `.cadence/config.yml`.
+
 Stage files and commit them to Cadence:
 
 ```sh
@@ -63,6 +65,16 @@ cadence commit
 
 The source marker status changes from `open` to `done`.
 
+Add notes below any Markdown item; Cadence keeps them with that item:
+
+```md
+- [x] $$todo:3:done - open final flux
+  add
+  support
+  for
+  multiline notes
+```
+
 ## Commands
 
 ```sh
@@ -82,4 +94,3 @@ cadence reset          # clear staged files
   staged.json          # staged files
   <type>.md            # generated checklist
 ```
-

@@ -41,7 +41,7 @@ fn find_markers_in_line(line: &str, marker_prefix: &str, line_number: usize) -> 
             .collect();
 
         if !marker_type.is_empty() {
-            // Check if it has the format $$type:id:status
+            // Check if it has the format <prefix>type:id:status
             let after_type = &rest[marker_type.len()..];
             let type_len = marker_type.len();
 

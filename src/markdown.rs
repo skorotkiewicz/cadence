@@ -5,8 +5,15 @@ use std::path::Path;
 use crate::db::{Database, DbItem};
 use std::collections::HashMap;
 
+struct ParsedMarkdownItem {
+    id: u64,
+    item_type: String,
+    status: String,
+    content: String,
+}
+
 /// Generate markdown files from database items
-pub fn generate_markdown_files(dir: &Path, db: &Database) -> Result<()> {
+pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -> Result<()> {
     let cadence_dir = dir.join(".cadence");
 
     // Group items by type
@@ -25,8 +32,19 @@ pub fn generate_markdown_files(dir: &Path, db: &Database) -> Result<()> {
 
         for item in items {
             let checked = if item.status == "done" { "[x]" } else { "[ ]" };
-            let marker = format!("$${}:{}:{}", item.item_type, item.id, item.status);
-            content.push_str(&format!("- {} {} - {}\n", checked, marker, item.content));
+            let marker = format!(
+                "{}{}:{}:{}",
+                marker_prefix, item.item_type, item.id, item.status
+            );
+            let mut item_lines = item.content.lines();
+            let first_line = item_lines.next().unwrap_or("");
+
+            content.push_str(&format!("- {} {} - {}\n", checked, marker, first_line));
+            for line in item_lines {
+                content.push_str("  ");
+                content.push_str(line);
+                content.push('\n');
+            }
         }
 
         fs::write(&md_path, content).with_context(|| format!("Failed to write: {:?}", md_path))?;
@@ -36,7 +54,7 @@ pub fn generate_markdown_files(dir: &Path, db: &Database) -> Result<()> {
 }
 
 /// Parse markdown file and return updated statuses
-pub fn parse_markdown_status(dir: &Path, db: &mut Database) -> Result<()> {
+pub fn parse_markdown_status(dir: &Path, db: &mut Database, marker_prefix: &str) -> Result<()> {
     let cadence_dir = dir.join(".cadence");
 
     // Read each markdown file
@@ -49,35 +67,82 @@ pub fn parse_markdown_status(dir: &Path, db: &mut Database) -> Result<()> {
             let content =
                 fs::read_to_string(&path).with_context(|| format!("Failed to read: {:?}", path))?;
 
-            // Parse each line
+            let mut current_item: Option<ParsedMarkdownItem> = None;
             for line in content.lines() {
-                // Parse: - [x] $$todo:1:done - content
-                if line.starts_with("- [") {
-                    let checked = line.starts_with("- [x]");
-                    let status = if checked { "done" } else { "open" };
-
-                    // Extract marker from line
-                    if let Some(marker_start) = line.find("$$") {
-                        let rest = &line[marker_start..];
-                        // Parse $$type:id:status
-                        let parts: Vec<&str> = rest.split(':').collect();
-                        if parts.len() >= 3
-                            && let Ok(id) = parts[1].parse::<u64>()
-                        {
-                            // Update database
-                            for item in &mut db.items {
-                                if item.id == id && item.item_type == type_name {
-                                    item.status = status.to_string();
-                                }
-                            }
-                        }
+                if let Some(item) = parse_markdown_item_line(line, marker_prefix) {
+                    if let Some(item) = current_item.take() {
+                        apply_markdown_item(db, &type_name, item);
                     }
+
+                    current_item = Some(item);
+                } else if let Some(item) = &mut current_item {
+                    append_continuation_line(&mut item.content, line);
                 }
+            }
+
+            if let Some(item) = current_item.take() {
+                apply_markdown_item(db, &type_name, item);
             }
         }
     }
 
     Ok(())
+}
+
+fn parse_markdown_item_line(line: &str, marker_prefix: &str) -> Option<ParsedMarkdownItem> {
+    let rest = line.strip_prefix("- [")?;
+    let (checkbox, rest) = rest.split_once(']')?;
+    let status = match checkbox {
+        "x" | "X" => "done",
+        " " => "open",
+        _ => return None,
+    };
+
+    let marker_start = rest.find(marker_prefix)?;
+    let marker = &rest[marker_start + marker_prefix.len()..];
+    let (item_type, marker) = marker.split_once(':')?;
+    let (id, marker) = marker.split_once(':')?;
+    let id = id.parse::<u64>().ok()?;
+    let content = marker
+        .split_once(" - ")
+        .map(|(_, content)| content)
+        .unwrap_or("")
+        .to_string();
+
+    Some(ParsedMarkdownItem {
+        id,
+        item_type: item_type.to_string(),
+        status: status.to_string(),
+        content,
+    })
+}
+
+fn append_continuation_line(content: &mut String, line: &str) {
+    let line = line
+        .strip_prefix("  ")
+        .or_else(|| line.strip_prefix('\t'))
+        .unwrap_or(line);
+
+    if !content.is_empty() {
+        content.push('\n');
+    }
+
+    content.push_str(line);
+}
+
+fn apply_markdown_item(db: &mut Database, type_name: &str, parsed: ParsedMarkdownItem) {
+    if parsed.item_type != type_name {
+        return;
+    }
+
+    if let Some(item) = db
+        .items
+        .iter_mut()
+        .find(|item| item.id == parsed.id && item.item_type == type_name)
+    {
+        item.status = parsed.status;
+        item.content = parsed.content;
+    }
 }
 
 #[cfg(test)]
@@ -100,7 +165,7 @@ mod tests {
             content: "Fix bug".to_string(),
         });
 
-        generate_markdown_files(temp_dir.path(), &db).unwrap();
+        generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
 
         let md_path = temp_dir.path().join(".cadence").join("todo.md");
         assert!(md_path.exists());
@@ -125,11 +190,59 @@ mod tests {
             content: "Done task".to_string(),
         });
 
-        generate_markdown_files(temp_dir.path(), &db).unwrap();
+        generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
 
         let md_path = temp_dir.path().join(".cadence").join("todo.md");
         let content = fs::read_to_string(&md_path).unwrap();
         assert!(content.contains("[x]"));
+    }
+
+    #[test]
+    fn test_generate_markdown_uses_marker_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 2,
+            item_type: "todo".to_string(),
+            file: "src/lib.rs".to_string(),
+            line: 20,
+            status: "done".to_string(),
+            content: "Done task".to_string(),
+        });
+
+        generate_markdown_files(temp_dir.path(), &db, "@@").unwrap();
+
+        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let content = fs::read_to_string(&md_path).unwrap();
+        assert!(content.contains("@@todo:2:done"));
+        assert!(!content.contains("$$todo:2:done"));
+    }
+
+    #[test]
+    fn test_generate_markdown_multiline_content() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 3,
+            item_type: "todo".to_string(),
+            file: "src/lib.rs".to_string(),
+            line: 20,
+            status: "done".to_string(),
+            content: "open final flux\nadd\nsupport\nfor\nmulti\nlines".to_string(),
+        });
+
+        generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
+
+        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let content = fs::read_to_string(&md_path).unwrap();
+        assert_eq!(
+            content,
+            "- [x] $$todo:3:done - open final flux\n  add\n  support\n  for\n  multi\n  lines\n"
+        );
     }
 
     #[test]
@@ -151,8 +264,92 @@ mod tests {
             content: "Fix bug".to_string(),
         });
 
-        parse_markdown_status(temp_dir.path(), &mut db).unwrap();
+        parse_markdown_status(temp_dir.path(), &mut db, "$$").unwrap();
 
         assert_eq!(db.items[0].status, "done");
+    }
+
+    #[test]
+    fn test_parse_markdown_status_uses_marker_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+
+        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        fs::write(&md_path, "- [x] @@todo:1:done - Fix bug\n").unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 1,
+            item_type: "todo".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 10,
+            status: "open".to_string(),
+            content: "Fix bug".to_string(),
+        });
+
+        parse_markdown_status(temp_dir.path(), &mut db, "@@").unwrap();
+
+        assert_eq!(db.items[0].status, "done");
+    }
+
+    #[test]
+    fn test_parse_markdown_multiline_content_updates_db() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+
+        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        fs::write(
+            &md_path,
+            concat!(
+                "- [ ] $$todo:1:open - test\n",
+                "- [x] $$todo:3:done - open final flux\n",
+                "  add\n",
+                "  support\n",
+                "  for\n",
+                "  multi\n",
+                "  lines\n",
+                "- [x] $$todo:5:done - antimater + mater\n",
+                "Hello\n",
+                "World\n",
+            ),
+        )
+        .unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 1,
+            item_type: "todo".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 10,
+            status: "open".to_string(),
+            content: "test".to_string(),
+        });
+        db.items.push(DbItem {
+            id: 3,
+            item_type: "todo".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 12,
+            status: "open".to_string(),
+            content: "open final flux".to_string(),
+        });
+        db.items.push(DbItem {
+            id: 5,
+            item_type: "todo".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 14,
+            status: "open".to_string(),
+            content: "antimater + mater".to_string(),
+        });
+
+        parse_markdown_status(temp_dir.path(), &mut db, "$$").unwrap();
+
+        assert_eq!(db.items[0].content, "test");
+        assert_eq!(db.items[1].status, "done");
+        assert_eq!(
+            db.items[1].content,
+            "open final flux\nadd\nsupport\nfor\nmulti\nlines"
+        );
+        assert_eq!(db.items[2].status, "done");
+        assert_eq!(db.items[2].content, "antimater + mater\nHello\nWorld");
     }
 }
