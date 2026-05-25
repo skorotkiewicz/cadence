@@ -2,8 +2,7 @@
 
 Small marker tracking for source files.
 
-<img src="assets/cadence.png" width="70%" />
-
+![](assets/cadence.png)
 
 Cadence turns comments like this:
 
