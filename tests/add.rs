@@ -41,3 +41,58 @@ fn add_stages_existing_file() {
     let staged = fs::read_to_string(temp_dir.path().join(".cadence").join("staged.json")).unwrap();
     assert!(staged.contains("main.rs"));
 }
+
+#[test]
+fn add_rejects_cadence_directory() {
+    let temp_dir = TempDir::new().unwrap();
+    assert!(run_cadence(&temp_dir, &["init"]).status.success());
+
+    let output = run_cadence(&temp_dir, &["add", ".cadence"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Cannot stage .cadence directory or its contents"));
+
+    let staged = fs::read_to_string(temp_dir.path().join(".cadence").join("staged.json")).unwrap();
+    assert!(staged.contains("\"files\": []"));
+}
+
+#[test]
+fn add_rejects_cadence_contents() {
+    let temp_dir = TempDir::new().unwrap();
+    assert!(run_cadence(&temp_dir, &["init"]).status.success());
+
+    let output = run_cadence(&temp_dir, &["add", ".cadence/config.yml"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Cannot stage .cadence directory or its contents"));
+
+    let staged = fs::read_to_string(temp_dir.path().join(".cadence").join("staged.json")).unwrap();
+    assert!(staged.contains("\"files\": []"));
+}
+
+#[test]
+fn add_rejects_nested_cadence_contents() {
+    let temp_dir = TempDir::new().unwrap();
+    assert!(run_cadence(&temp_dir, &["init"]).status.success());
+    fs::create_dir_all(temp_dir.path().join("nested").join(".cadence")).unwrap();
+    fs::write(
+        temp_dir
+            .path()
+            .join("nested")
+            .join(".cadence")
+            .join("config.yml"),
+        "marker_prefix: \"$$\"\n",
+    )
+    .unwrap();
+
+    let output = run_cadence(&temp_dir, &["add", "nested/.cadence/config.yml"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Cannot stage .cadence directory or its contents"));
+
+    let staged = fs::read_to_string(temp_dir.path().join(".cadence").join("staged.json")).unwrap();
+    assert!(staged.contains("\"files\": []"));
+}

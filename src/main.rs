@@ -5,7 +5,8 @@ use cadence::{
     update_source_files_for_files,
 };
 use clap::Parser;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Component, Path};
 
 fn main() -> Result<()> {
     let cli = cadence::Cli::parse();
@@ -17,6 +18,10 @@ fn main() -> Result<()> {
             println!("Cadence initialized in .cadence/");
         }
         cadence::Commands::Add { path } => {
+            if contains_cadence_dir(&path) {
+                bail!("Cannot stage .cadence directory or its contents");
+            }
+
             let full_path = cwd.join(&path);
             if !full_path.exists() {
                 bail!("Path does not exist: {}", path);
@@ -86,7 +91,13 @@ fn main() -> Result<()> {
 fn staged_source_files(files: &[String]) -> Vec<String> {
     files
         .iter()
-        .filter(|file| !Path::new(file).starts_with(".cadence"))
+        .filter(|file| !contains_cadence_dir(file))
         .cloned()
         .collect()
+}
+
+fn contains_cadence_dir(path: &str) -> bool {
+    Path::new(path).components().any(
+        |component| matches!(component, Component::Normal(name) if name == OsStr::new(".cadence")),
+    )
 }
