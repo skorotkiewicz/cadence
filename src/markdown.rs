@@ -42,10 +42,14 @@ pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -
                 "{}{}:{}:{}",
                 marker_prefix, item.item_type, item.id, item.status
             );
+            let location = item_location(item);
             let mut item_lines = item.content.lines();
             let first_line = item_lines.next().unwrap_or("");
 
-            content.push_str(&format!("- {} {} - {}\n", checked, marker, first_line));
+            content.push_str(&format!(
+                "- {} {} - {} - {}\n",
+                checked, marker, location, first_line
+            ));
             for line in item_lines {
                 content.push_str("  ");
                 content.push_str(line);
@@ -145,6 +149,7 @@ fn parse_markdown_item_line(
         return Ok(None);
     };
     let (marker_status, content) = marker.split_once(" - ").unwrap_or((marker, ""));
+    let content = strip_location_prefix(content);
     let status = schemas
         .status_for_markdown(item_type, &checkbox)
         .or_else(|| fallback_status_for_markdown(&checkbox).map(str::to_string));
@@ -156,6 +161,41 @@ fn parse_markdown_item_line(
         status,
         content: content.to_string(),
     }))
+}
+
+fn item_location(item: &DbItem) -> String {
+    if item.column > 0 {
+        format!("{}:{}:{}", item.file, item.line, item.column)
+    } else {
+        format!("{}:{}", item.file, item.line)
+    }
+}
+
+fn strip_location_prefix(content: &str) -> &str {
+    let Some((candidate, rest)) = content.split_once(" - ") else {
+        return content;
+    };
+
+    if is_source_location(candidate) {
+        rest
+    } else {
+        content
+    }
+}
+
+fn is_source_location(value: &str) -> bool {
+    let Some((before_last, last)) = value.rsplit_once(':') else {
+        return false;
+    };
+    if before_last.is_empty() || !last.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    if let Some((path, line)) = before_last.rsplit_once(':') {
+        !path.is_empty() && !line.is_empty() && line.chars().all(|c| c.is_ascii_digit())
+    } else {
+        !before_last.is_empty()
+    }
 }
 
 fn append_continuation_line(content: &mut String, line: &str) {
@@ -220,6 +260,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 10,
+            column: 5,
             status: "open".to_string(),
             content: "Fix bug".to_string(),
         });
@@ -236,6 +277,7 @@ mod tests {
         let content = fs::read_to_string(&md_path).unwrap();
         assert!(content.contains("[ ]"));
         assert!(content.contains("$$todo:1:open"));
+        assert!(content.contains("src/main.rs:10:5"));
     }
 
     #[test]
@@ -249,6 +291,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/lib.rs".to_string(),
             line: 20,
+            column: 0,
             status: "done".to_string(),
             content: "Done task".to_string(),
         });
@@ -275,6 +318,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/lib.rs".to_string(),
             line: 20,
+            column: 0,
             status: "done".to_string(),
             content: "Done task".to_string(),
         });
@@ -309,6 +353,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/lib.rs".to_string(),
             line: 20,
+            column: 7,
             status: "in-progress".to_string(),
             content: "Done task".to_string(),
         });
@@ -321,7 +366,7 @@ mod tests {
             .join("items")
             .join("todo.md");
         let content = fs::read_to_string(&md_path).unwrap();
-        assert!(content.contains("- [Q] $$todo:2:in-progress - Done task"));
+        assert!(content.contains("- [Q] $$todo:2:in-progress - src/lib.rs:20:7 - Done task"));
     }
 
     #[test]
@@ -335,6 +380,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/lib.rs".to_string(),
             line: 20,
+            column: 0,
             status: "done".to_string(),
             content: "open final flux\nadd\nsupport\nfor\nmulti\nlines".to_string(),
         });
@@ -349,7 +395,7 @@ mod tests {
         let content = fs::read_to_string(&md_path).unwrap();
         assert_eq!(
             content,
-            "- [x] $$todo:3:done - open final flux\n  add\n  support\n  for\n  multi\n  lines\n"
+            "- [x] $$todo:3:done - src/lib.rs:20 - open final flux\n  add\n  support\n  for\n  multi\n  lines\n"
         );
     }
 
@@ -364,7 +410,11 @@ mod tests {
             .join(".cadence")
             .join("items")
             .join("todo.md");
-        fs::write(&md_path, "- [x] $$todo:1:done - Fix bug\n").unwrap();
+        fs::write(
+            &md_path,
+            "- [x] $$todo:1:done - src/main.rs:10:5 - Fix bug\n",
+        )
+        .unwrap();
 
         let mut db = Database::default();
         db.items.push(DbItem {
@@ -372,6 +422,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 10,
+            column: 0,
             status: "open".to_string(),
             content: "Fix bug".to_string(),
         });
@@ -379,6 +430,7 @@ mod tests {
         parse_markdown_status(temp_dir.path(), &mut db, "$$").unwrap();
 
         assert_eq!(db.items[0].status, "done");
+        assert_eq!(db.items[0].content, "Fix bug");
     }
 
     #[test]
@@ -399,6 +451,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 10,
+            column: 0,
             status: "open".to_string(),
             content: "Fix bug".to_string(),
         });
@@ -433,6 +486,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 10,
+            column: 0,
             status: "open".to_string(),
             content: "Fix bug".to_string(),
         });
@@ -475,6 +529,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 10,
+            column: 0,
             status: "open".to_string(),
             content: "test".to_string(),
         });
@@ -483,6 +538,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 12,
+            column: 0,
             status: "open".to_string(),
             content: "open final flux".to_string(),
         });
@@ -491,6 +547,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 14,
+            column: 0,
             status: "open".to_string(),
             content: "antimater + mater".to_string(),
         });

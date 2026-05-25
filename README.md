@@ -48,7 +48,7 @@ cadence commit
 Cadence assigns IDs in the source file and writes Markdown checklists:
 
 ```md
-- [ ] $$todo:1:open - handle empty input
+- [ ] $$todo:1:open - src/main.rs:1:4 - handle empty input
 ```
 
 Check an item in `.cadence/items/*.md`, then run:
@@ -62,11 +62,11 @@ The source marker status changes from `open` to `done`.
 Add notes below any Markdown item; Cadence keeps them with that item:
 
 ```md
-- [x] $$todo:3:done - final flux
-  happy
-  new
-  sommer!
-- [x] $$todo:4:in-progress - more daleks!
+- [x] $$todo:3:done - src/main.rs:8:4 - final flux
+  Happy
+  Spring
+  Break!
+- [~] $$todo:4:in-progress - src/main.rs:12:4 - more daleks!
 ```
 
 Customize checklist markers in `.cadence/schemas.yml`:

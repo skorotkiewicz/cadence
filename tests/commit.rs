@@ -69,8 +69,8 @@ fn commit_applies_markdown_status_only_to_staged_files() {
     assert_eq!(b, "// $$todo:2:open second\n");
 
     let markdown = fs::read_to_string(md_path).unwrap();
-    assert!(markdown.contains("- [x] $$todo:1:done - first"));
-    assert!(markdown.contains("- [ ] $$todo:2:open - second"));
+    assert!(markdown.contains("- [x] $$todo:1:done - a.rs:1:4 - first"));
+    assert!(markdown.contains("- [ ] $$todo:2:open - b.rs:1:4 - second"));
 }
 
 #[test]
@@ -107,7 +107,7 @@ fixme:
     let markdown = fs::read_to_string(md_path).unwrap();
     assert_eq!(
         markdown,
-        "- [~] $$fixme:1:in-progress - avoid duplicate work\n"
+        "- [~] $$fixme:1:in-progress - main.rs:1:4 - avoid duplicate work\n"
     );
 
     let source = fs::read_to_string(temp_dir.path().join("main.rs")).unwrap();

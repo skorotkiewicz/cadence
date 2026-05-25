@@ -14,6 +14,8 @@ pub struct DbItem {
     pub item_type: String,
     pub file: String,
     pub line: usize,
+    #[serde(default)]
+    pub column: usize,
     pub status: String,
     pub content: String,
 }
@@ -129,6 +131,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 10,
+            column: 5,
             status: "open".to_string(),
             content: "Fix bug".to_string(),
         });

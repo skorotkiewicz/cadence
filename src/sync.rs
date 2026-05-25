@@ -108,6 +108,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 1,
+            column: 0,
             status: "done".to_string(),
             content: "fix this".to_string(),
         });
@@ -135,6 +136,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 1,
+            column: 0,
             status: "done".to_string(),
             content: "fix this".to_string(),
         });
@@ -161,6 +163,7 @@ mod tests {
             item_type: "todo".to_string(),
             file: "src/main.rs".to_string(),
             line: 1,
+            column: 0,
             status: "done".to_string(),
             content: "fix this".to_string(),
         });

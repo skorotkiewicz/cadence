@@ -52,6 +52,7 @@ pub fn update_files_with_ids(
                     item_type: marker.marker_type.clone(),
                     file: file_path.clone(),
                     line: marker.line_number,
+                    column: marker.column_offset + 1,
                     status,
                     content: content_after.to_string(),
                 });
