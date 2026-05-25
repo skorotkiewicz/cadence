@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -53,10 +53,10 @@ pub fn load_schemas(dir: &Path) -> Result<Schemas> {
     let content = fs::read_to_string(&schemas_path)
         .with_context(|| format!("Failed to read: {:?}", schemas_path))?;
 
-    Ok(parse_schemas(&content))
+    parse_schemas(&content)
 }
 
-fn parse_schemas(content: &str) -> Schemas {
+fn parse_schemas(content: &str) -> Result<Schemas> {
     let mut schemas = Schemas::default();
     let mut current_type = None;
 
@@ -78,29 +78,34 @@ fn parse_schemas(content: &str) -> Schemas {
         };
 
         if let Some(value) = trimmed.strip_prefix("statuses:") {
-            let statuses = parse_statuses(value.trim());
+            let statuses = parse_statuses(value.trim())
+                .with_context(|| format!("Invalid statuses for marker type `{}`", type_name))?;
             schemas
                 .by_type
                 .insert(type_name.clone(), MarkerSchema { statuses });
         }
     }
 
-    schemas
+    Ok(schemas)
 }
 
-fn parse_statuses(value: &str) -> Vec<StatusSchema> {
+fn parse_statuses(value: &str) -> Result<Vec<StatusSchema>> {
     let value = value.trim();
     let Some(value) = value.strip_prefix('[') else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(value) = value.strip_suffix(']') else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
-    split_inline_list(value)
-        .into_iter()
-        .filter_map(|entry| parse_status_entry(&entry))
-        .collect()
+    let mut statuses = Vec::new();
+    for entry in split_inline_list(value) {
+        if let Some(status) = parse_status_entry(&entry)? {
+            statuses.push(status);
+        }
+    }
+
+    Ok(statuses)
 }
 
 fn split_inline_list(value: &str) -> Vec<String> {
@@ -127,29 +132,41 @@ fn split_inline_list(value: &str) -> Vec<String> {
     items
 }
 
-fn parse_status_entry(entry: &str) -> Option<StatusSchema> {
+fn parse_status_entry(entry: &str) -> Result<Option<StatusSchema>> {
     let entry = unquote(entry.trim());
     if entry.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let (name, markdown) = if let Some((name, markdown)) = entry.split_once(':') {
         (name.trim(), markdown.trim())
-    } else if let Some(markdown_start) = entry.rfind('[') {
-        let (name, markdown) = entry.split_at(markdown_start);
-        (name.trim(), markdown.trim())
     } else {
+        if entry.contains('[') || entry.contains(']') {
+            bail!(
+                "status `{}` is missing `:` before its checklist marker",
+                entry
+            );
+        }
+
         (entry, default_markdown_for_status(entry))
     };
 
     if name.is_empty() || markdown.is_empty() {
-        return None;
+        return Ok(None);
     }
 
-    Some(StatusSchema {
+    if !markdown.starts_with('[') || !markdown.ends_with(']') {
+        bail!(
+            "status `{}` has invalid checklist marker `{}`",
+            name,
+            markdown
+        );
+    }
+
+    Ok(Some(StatusSchema {
         name: name.to_string(),
         markdown: markdown.to_string(),
-    })
+    }))
 }
 
 fn unquote(value: &str) -> &str {
@@ -193,7 +210,8 @@ todo:
 fixme:
   statuses: ["open:[ ]", "done:[X]"]
 "#,
-        );
+        )
+        .unwrap();
 
         assert_eq!(schemas.markdown_for_status("todo", "open"), "[ ]");
         assert_eq!(schemas.markdown_for_status("todo", "done"), "[X]");
@@ -205,15 +223,20 @@ fixme:
     }
 
     #[test]
-    fn test_parse_schemas_supports_status_marker_without_colon() {
-        let schemas = parse_schemas(
+    fn test_parse_schemas_rejects_status_marker_without_colon() {
+        let err = parse_schemas(
             r#"
 todo:
   statuses: ["open:[ ]", "done:[X]", "in-progress[Q]"]
 "#,
-        );
+        )
+        .unwrap_err();
 
-        assert_eq!(schemas.markdown_for_status("todo", "in-progress"), "[Q]");
+        assert!(err.chain().any(|cause| {
+            cause
+                .to_string()
+                .contains("status `in-progress[Q]` is missing `:`")
+        }));
     }
 
     #[test]
@@ -223,7 +246,8 @@ todo:
 todo:
   statuses: ["open", "done", "in-progress"]
 "#,
-        );
+        )
+        .unwrap();
 
         assert_eq!(schemas.markdown_for_status("todo", "open"), "[ ]");
         assert_eq!(schemas.markdown_for_status("todo", "done"), "[x]");

@@ -66,14 +66,14 @@ Add notes below any Markdown item; Cadence keeps them with that item:
   happy
   new
   sommer!
-- [x] $$todo:4:open - more daleks!
+- [x] $$todo:4:in-progress - more daleks!
 ```
 
 Customize checklist markers in `.cadence/schemas.yml`:
 
 ```yml
 todo:
-  statuses: ["open:[ ]", "done:[X]", "in-progress:[Q]"]
+  statuses: ["open:[ ]", "done:[x]", "in-progress:[~]"]
 ```
 
 ## Commands

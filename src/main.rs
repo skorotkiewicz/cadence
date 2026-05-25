@@ -5,6 +5,7 @@ use cadence::{
     update_source_files_for_files,
 };
 use clap::Parser;
+use std::path::Path;
 
 fn main() -> Result<()> {
     let cli = cadence::Cli::parse();
@@ -42,15 +43,16 @@ fn main() -> Result<()> {
 
             let mut db = load_db(&cwd)?;
             let marker_prefix = load_marker_prefix(&cwd)?;
+            let staged_source_files = staged_source_files(&staged.files);
 
             // Step 1: Parse markdown for status changes FIRST (to get user edits)
             parse_markdown_status_for_files(&cwd, &mut db, &marker_prefix, &staged.files)?;
 
             // Step 2: Update source files with those status changes
-            update_source_files_for_files(&cwd, &db, &marker_prefix, &staged.files)?;
+            update_source_files_for_files(&cwd, &db, &marker_prefix, &staged_source_files)?;
 
             // Step 3: Update files with new IDs for unmarked markers
-            update_files_with_ids(&cwd, &staged.files, &mut db, &marker_prefix)?;
+            update_files_with_ids(&cwd, &staged_source_files, &mut db, &marker_prefix)?;
 
             // Step 4: Save the updated database
             save_db(&cwd, &db)?;
@@ -62,7 +64,7 @@ fn main() -> Result<()> {
             let committed_items = db
                 .items
                 .iter()
-                .filter(|item| staged.files.contains(&item.file))
+                .filter(|item| staged_source_files.contains(&item.file))
                 .count();
             staged.files.clear();
             save_staged(&cwd, &staged)?;
@@ -79,4 +81,12 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn staged_source_files(files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|file| !Path::new(file).starts_with(".cadence"))
+        .cloned()
+        .collect()
 }

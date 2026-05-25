@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::Path;
 
@@ -9,7 +9,9 @@ use std::collections::HashMap;
 struct ParsedMarkdownItem {
     id: u64,
     item_type: String,
-    status: String,
+    status: Option<String>,
+    checkbox: String,
+    marker_status: String,
     content: String,
 }
 
@@ -90,9 +92,9 @@ fn parse_markdown_status_filtered(
 
             let mut current_item: Option<ParsedMarkdownItem> = None;
             for line in content.lines() {
-                if let Some(item) = parse_markdown_item_line(line, marker_prefix, &schemas) {
+                if let Some(item) = parse_markdown_item_line(line, marker_prefix, &schemas)? {
                     if let Some(item) = current_item.take() {
-                        apply_markdown_item(db, &type_name, item, files);
+                        apply_markdown_item(db, &type_name, item, files)?;
                     }
 
                     current_item = Some(item);
@@ -102,7 +104,7 @@ fn parse_markdown_status_filtered(
             }
 
             if let Some(item) = current_item.take() {
-                apply_markdown_item(db, &type_name, item, files);
+                apply_markdown_item(db, &type_name, item, files)?;
             }
         }
     }
@@ -114,28 +116,40 @@ fn parse_markdown_item_line(
     line: &str,
     marker_prefix: &str,
     schemas: &Schemas,
-) -> Option<ParsedMarkdownItem> {
-    let rest = line.strip_prefix("- [")?;
-    let (checkbox, rest) = rest.split_once(']')?;
+) -> Result<Option<ParsedMarkdownItem>> {
+    let Some(rest) = line.strip_prefix("- [") else {
+        return Ok(None);
+    };
+    let Some((checkbox, rest)) = rest.split_once(']') else {
+        return Ok(None);
+    };
     let checkbox = format!("[{}]", checkbox);
 
-    let marker_start = rest.find(marker_prefix)?;
+    let Some(marker_start) = rest.find(marker_prefix) else {
+        return Ok(None);
+    };
     let marker = &rest[marker_start + marker_prefix.len()..];
-    let (item_type, marker) = marker.split_once(':')?;
-    let (id, marker) = marker.split_once(':')?;
-    let id = id.parse::<u64>().ok()?;
+    let Some((item_type, marker)) = marker.split_once(':') else {
+        return Ok(None);
+    };
+    let Some((id, marker)) = marker.split_once(':') else {
+        return Ok(None);
+    };
+    let Ok(id) = id.parse::<u64>() else {
+        return Ok(None);
+    };
     let (marker_status, content) = marker.split_once(" - ").unwrap_or((marker, ""));
     let status = schemas
         .status_for_markdown(item_type, &checkbox)
-        .or_else(|| fallback_status_for_markdown(&checkbox).map(str::to_string))
-        .unwrap_or_else(|| marker_status.to_string());
-
-    Some(ParsedMarkdownItem {
+        .or_else(|| fallback_status_for_markdown(&checkbox).map(str::to_string));
+    Ok(Some(ParsedMarkdownItem {
         id,
         item_type: item_type.to_string(),
+        checkbox,
+        marker_status: marker_status.to_string(),
         status,
         content: content.to_string(),
-    })
+    }))
 }
 
 fn append_continuation_line(content: &mut String, line: &str) {
@@ -156,9 +170,9 @@ fn apply_markdown_item(
     type_name: &str,
     parsed: ParsedMarkdownItem,
     files: Option<&[String]>,
-) {
+) -> Result<()> {
     if parsed.item_type != type_name {
-        return;
+        return Ok(());
     }
 
     if let Some(item) = db.items.iter_mut().find(|item| {
@@ -168,9 +182,20 @@ fn apply_markdown_item(
                 .map(|files| files.contains(&item.file))
                 .unwrap_or(true)
     }) {
-        item.status = parsed.status;
+        let Some(status) = parsed.status else {
+            bail!(
+                "Unknown checklist marker `{}` for `{}`; add it to .cadence/schemas.yml or keep status `{}`",
+                parsed.checkbox,
+                parsed.item_type,
+                parsed.marker_status
+            );
+        };
+
+        item.status = status;
         item.content = parsed.content;
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
