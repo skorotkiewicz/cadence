@@ -44,9 +44,9 @@ fn find_markers_in_line(line: &str, marker_prefix: &str, line_number: usize) -> 
             let after_type = &rest[marker_type.len()..];
             let type_len = marker_type.len();
             
-            if after_type.starts_with(':') {
+            if let Some(after_type) = after_type.strip_prefix(':') {
                 // Has existing ID
-                let parts: Vec<&str> = after_type[1..].splitn(2, ':').collect();
+                let parts: Vec<&str> = after_type.splitn(2, ':').collect();
                 let existing_id: u64 = parts[0].parse().unwrap_or(0);
                 let existing_status = if parts.len() > 1 {
                     // Extract status (until space or end)

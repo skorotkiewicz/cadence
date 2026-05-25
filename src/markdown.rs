@@ -59,13 +59,11 @@ pub fn parse_markdown_status(dir: &Path, db: &mut Database) -> Result<()> {
                         let rest = &line[marker_start..];
                         // Parse $$type:id:status
                         let parts: Vec<&str> = rest.split(':').collect();
-                        if parts.len() >= 3 {
-                            if let Ok(id) = parts[1].parse::<u64>() {
-                                // Update database
-                                for item in &mut db.items {
-                                    if item.id == id && item.item_type == type_name {
-                                        item.status = status.to_string();
-                                    }
+                        if parts.len() >= 3 && let Ok(id) = parts[1].parse::<u64>() {
+                            // Update database
+                            for item in &mut db.items {
+                                if item.id == id && item.item_type == type_name {
+                                    item.status = status.to_string();
                                 }
                             }
                         }

@@ -28,25 +28,22 @@ fn main() -> Result<()> {
             let mut staged = load_staged(&cwd)?;
             let mut db = load_db(&cwd)?;
             
-            // Step 1: Update files with new IDs for unmarked markers
-            update_files_with_ids(&cwd, &staged.files, &mut db, "$$")?;
-            
-            // Step 2: Save the updated database
-            save_db(&cwd, &db)?;
-            
-            // Step 3: Generate markdown files
-            generate_markdown_files(&cwd, &db)?;
-            
-            // Step 4: Parse markdown for status changes
+            // Step 1: Parse markdown for status changes FIRST (to get user edits)
             parse_markdown_status(&cwd, &mut db)?;
             
-            // Step 5: Save updated database
-            save_db(&cwd, &db)?;
-            
-            // Step 6: Update source files with new statuses
+            // Step 2: Update source files with those status changes
             update_source_files(&cwd, &db)?;
             
-            // Step 7: Clear staged files
+            // Step 3: Update files with new IDs for unmarked markers
+            update_files_with_ids(&cwd, &staged.files, &mut db, "$$")?;
+            
+            // Step 4: Save the updated database
+            save_db(&cwd, &db)?;
+            
+            // Step 5: Generate markdown files with updated data
+            generate_markdown_files(&cwd, &db)?;
+            
+            // Step 6: Clear staged files
             staged.files.clear();
             save_staged(&cwd, &staged)?;
             

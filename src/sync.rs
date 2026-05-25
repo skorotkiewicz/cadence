@@ -28,7 +28,7 @@ pub fn update_source_files(dir: &Path, db: &Database) -> Result<()> {
             if let Some(pos) = line.find(&pattern) {
                 // Find the end of the status (space or end of marker)
                 let after_pattern = &line[pos + pattern.len()..];
-                let status_end = after_pattern.find(|c| c == ' ' || c == '\t' || c == '\n').unwrap_or(after_pattern.len());
+                let status_end = after_pattern.find([' ', '\t', '\n']).unwrap_or(after_pattern.len());
                 let old_status = &after_pattern[..status_end];
                 
                 if old_status != item.status {
