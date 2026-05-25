@@ -16,6 +16,11 @@ struct ParsedMarkdownItem {
     content: String,
 }
 
+struct MarkdownBlock {
+    item: ParsedMarkdownItem,
+    raw: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SourceLocation {
     file: String,
@@ -25,6 +30,24 @@ struct SourceLocation {
 
 /// Generate markdown files from database items
 pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -> Result<()> {
+    generate_markdown_files_filtered(dir, db, marker_prefix, None)
+}
+
+pub fn generate_markdown_files_for_files(
+    dir: &Path,
+    db: &Database,
+    marker_prefix: &str,
+    files: &[String],
+) -> Result<()> {
+    generate_markdown_files_filtered(dir, db, marker_prefix, Some(files))
+}
+
+fn generate_markdown_files_filtered(
+    dir: &Path,
+    db: &Database,
+    marker_prefix: &str,
+    files: Option<&[String]>,
+) -> Result<()> {
     let items_dir = dir.join(".cadence").join("items");
     fs::create_dir_all(&items_dir)
         .with_context(|| format!("Failed to create directory: {:?}", items_dir))?;
@@ -41,34 +64,139 @@ pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -
 
     // Generate markdown for each type
     for (type_name, items) in by_type {
-        let md_path = items_dir.join(format!("{}.md", type_name));
-        let mut content = String::new();
-
-        for item in items {
-            let checked = schemas.markdown_for_status(&item.item_type, &item.status);
-            let marker = format!(
-                "{}{}:{}:{}",
-                marker_prefix, item.item_type, item.id, item.status
-            );
-            let location = item_location(item);
-            let mut item_lines = item.content.lines();
-            let first_line = item_lines.next().unwrap_or("");
-
-            content.push_str(&format!(
-                "- {} {} - {} - {}\n",
-                checked, marker, location, first_line
-            ));
-            for line in item_lines {
-                content.push_str("  ");
-                content.push_str(line);
-                content.push('\n');
-            }
+        if let Some(files) = files
+            && !items.iter().any(|item| files.contains(&item.file))
+        {
+            continue;
         }
+
+        let md_path = items_dir.join(format!("{}.md", type_name));
+        let content = if let Some(files) = files {
+            generate_markdown_type_for_files(
+                &md_path,
+                &type_name,
+                &items,
+                marker_prefix,
+                &schemas,
+                files,
+            )?
+        } else {
+            let mut content = String::new();
+            for item in items {
+                content.push_str(&render_markdown_item(item, marker_prefix, &schemas));
+            }
+            content
+        };
 
         fs::write(&md_path, content).with_context(|| format!("Failed to write: {:?}", md_path))?;
     }
 
     Ok(())
+}
+
+fn generate_markdown_type_for_files(
+    md_path: &Path,
+    type_name: &str,
+    items: &[&DbItem],
+    marker_prefix: &str,
+    schemas: &Schemas,
+    files: &[String],
+) -> Result<String> {
+    let existing_blocks = read_existing_markdown_blocks(md_path, marker_prefix, schemas)?;
+    let mut rendered_items = Vec::new();
+    let mut content = String::new();
+
+    for block in existing_blocks {
+        if let Some(item) = items
+            .iter()
+            .find(|item| markdown_block_matches_item(&block, type_name, item))
+        {
+            if files.contains(&item.file) {
+                content.push_str(&render_markdown_item(item, marker_prefix, schemas));
+                rendered_items.push((item.item_type.clone(), item.id));
+            } else {
+                content.push_str(&block.raw);
+            }
+        } else {
+            content.push_str(&block.raw);
+        }
+    }
+
+    for item in items {
+        if files.contains(&item.file)
+            && !rendered_items
+                .iter()
+                .any(|(item_type, id)| item_type == &item.item_type && id == &item.id)
+        {
+            content.push_str(&render_markdown_item(item, marker_prefix, schemas));
+        }
+    }
+
+    Ok(content)
+}
+
+fn render_markdown_item(item: &DbItem, marker_prefix: &str, schemas: &Schemas) -> String {
+    let checked = schemas.markdown_for_status(&item.item_type, &item.status);
+    let marker = format!(
+        "{}{}:{}:{}",
+        marker_prefix, item.item_type, item.id, item.status
+    );
+    let location = item_location(item);
+    let mut item_lines = item.content.lines();
+    let first_line = item_lines.next().unwrap_or("");
+    let mut content = format!("- {} {} - {} - {}\n", checked, marker, location, first_line);
+
+    for line in item_lines {
+        content.push_str("  ");
+        content.push_str(line);
+        content.push('\n');
+    }
+
+    content
+}
+
+fn read_existing_markdown_blocks(
+    md_path: &Path,
+    marker_prefix: &str,
+    schemas: &Schemas,
+) -> Result<Vec<MarkdownBlock>> {
+    if !md_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content =
+        fs::read_to_string(md_path).with_context(|| format!("Failed to read: {:?}", md_path))?;
+    let mut blocks = Vec::new();
+    let mut current_block: Option<MarkdownBlock> = None;
+
+    for line in content.lines() {
+        if let Some(item) = parse_markdown_item_line(line, marker_prefix, schemas)? {
+            if let Some(block) = current_block.take() {
+                blocks.push(block);
+            }
+
+            let mut raw = String::new();
+            raw.push_str(line);
+            raw.push('\n');
+            current_block = Some(MarkdownBlock { item, raw });
+        } else if let Some(block) = &mut current_block {
+            block.raw.push_str(line);
+            block.raw.push('\n');
+        }
+    }
+
+    if let Some(block) = current_block {
+        blocks.push(block);
+    }
+
+    Ok(blocks)
+}
+
+fn markdown_block_matches_item(block: &MarkdownBlock, type_name: &str, item: &DbItem) -> bool {
+    block.item.id == item.id
+        && block.item.item_type == type_name
+        && item.item_type == type_name
+        && location_matches(item, block.item.location.as_ref())
 }
 
 /// Parse markdown file and return updated statuses

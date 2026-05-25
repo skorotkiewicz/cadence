@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 use cadence::{
-    generate_markdown_files, init_cadence, load_db, load_marker_prefix, load_staged,
+    generate_markdown_files_for_files, init_cadence, load_db, load_marker_prefix, load_staged,
     parse_markdown_status_for_files, save_db, save_staged, update_files_with_ids,
     update_source_files_for_files,
 };
@@ -74,8 +74,8 @@ fn main() -> Result<()> {
             // Step 4: Save the updated database
             save_db(&cwd, &db)?;
 
-            // Step 5: Generate markdown files with updated data
-            generate_markdown_files(&cwd, &db, &marker_prefix)?;
+            // Step 5: Generate markdown blocks for staged source files
+            generate_markdown_files_for_files(&cwd, &db, &marker_prefix, &staged_source_files)?;
 
             // Step 6: Clear staged files
             let committed_items = db

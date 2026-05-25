@@ -74,7 +74,7 @@ fn commit_applies_markdown_status_only_to_staged_files() {
 
     let markdown = fs::read_to_string(md_path).unwrap();
     assert!(markdown.contains("- [x] $$todo:1:done - a.rs:1:4 - first"));
-    assert!(markdown.contains("- [ ] $$todo:2:open - b.rs:1:4 - second"));
+    assert!(markdown.contains("- [x] $$todo:2:done - second"));
 }
 
 #[test]
@@ -157,6 +157,7 @@ fn commit_applies_markdown_change_only_to_matching_staged_source_file() {
             "- [~] $$fixme:1:in-progress - TEST.md:35:4 - avoid duplicate work\n",
             "  asd\n",
             "- [~] $$fixme:2:in-progress - tests/TEST.md:35:4 - avoid duplicate work\n",
+            "user important notes\n",
         ),
     )
     .unwrap();
@@ -175,7 +176,9 @@ fn commit_applies_markdown_change_only_to_matching_staged_source_file() {
         markdown
             .contains("- [~] $$fixme:1:in-progress - TEST.md:35:4 - avoid duplicate work\n  asd\n")
     );
-    assert!(markdown.contains("- [ ] $$fixme:2:open - tests/TEST.md:35:4 - avoid duplicate work"));
+    assert!(markdown.contains(
+        "- [~] $$fixme:2:in-progress - tests/TEST.md:35:4 - avoid duplicate work\nuser important notes\n"
+    ));
 }
 
 #[test]
