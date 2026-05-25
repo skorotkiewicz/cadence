@@ -2,6 +2,9 @@
 
 Small marker tracking for source files.
 
+<img src="assets/cadence.png" width="70%" />
+
+
 Cadence turns comments like this:
 
 ```rust
