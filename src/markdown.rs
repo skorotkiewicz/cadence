@@ -9,10 +9,18 @@ use std::collections::HashMap;
 struct ParsedMarkdownItem {
     id: u64,
     item_type: String,
+    location: Option<SourceLocation>,
     status: Option<String>,
     checkbox: String,
     marker_status: String,
     content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SourceLocation {
+    file: String,
+    line: usize,
+    column: Option<usize>,
 }
 
 /// Generate markdown files from database items
@@ -149,13 +157,14 @@ fn parse_markdown_item_line(
         return Ok(None);
     };
     let (marker_status, content) = marker.split_once(" - ").unwrap_or((marker, ""));
-    let content = strip_location_prefix(content);
+    let (location, content) = split_location_prefix(content);
     let status = schemas
         .status_for_markdown(item_type, &checkbox)
         .or_else(|| fallback_status_for_markdown(&checkbox).map(str::to_string));
     Ok(Some(ParsedMarkdownItem {
         id,
         item_type: item_type.to_string(),
+        location,
         checkbox,
         marker_status: marker_status.to_string(),
         status,
@@ -171,30 +180,42 @@ fn item_location(item: &DbItem) -> String {
     }
 }
 
-fn strip_location_prefix(content: &str) -> &str {
+fn split_location_prefix(content: &str) -> (Option<SourceLocation>, &str) {
     let Some((candidate, rest)) = content.split_once(" - ") else {
-        return content;
+        return (None, content);
     };
 
-    if is_source_location(candidate) {
-        rest
+    if let Some(location) = parse_source_location(candidate) {
+        (Some(location), rest)
     } else {
-        content
+        (None, content)
     }
 }
 
-fn is_source_location(value: &str) -> bool {
-    let Some((before_last, last)) = value.rsplit_once(':') else {
-        return false;
-    };
-    if before_last.is_empty() || !last.chars().all(|c| c.is_ascii_digit()) {
-        return false;
+fn parse_source_location(value: &str) -> Option<SourceLocation> {
+    let (before_last, last) = value.rsplit_once(':')?;
+    let last = last.parse::<usize>().ok()?;
+    if before_last.is_empty() || last == 0 {
+        return None;
     }
 
     if let Some((path, line)) = before_last.rsplit_once(':') {
-        !path.is_empty() && !line.is_empty() && line.chars().all(|c| c.is_ascii_digit())
+        let line = line.parse::<usize>().ok()?;
+        if path.is_empty() || line == 0 {
+            return None;
+        }
+
+        Some(SourceLocation {
+            file: path.to_string(),
+            line,
+            column: Some(last),
+        })
     } else {
-        !before_last.is_empty()
+        Some(SourceLocation {
+            file: before_last.to_string(),
+            line: last,
+            column: None,
+        })
     }
 }
 
@@ -224,6 +245,7 @@ fn apply_markdown_item(
     if let Some(item) = db.items.iter_mut().find(|item| {
         item.id == parsed.id
             && item.item_type == type_name
+            && location_matches(item, parsed.location.as_ref())
             && files
                 .map(|files| files.contains(&item.file))
                 .unwrap_or(true)
@@ -242,6 +264,19 @@ fn apply_markdown_item(
     }
 
     Ok(())
+}
+
+fn location_matches(item: &DbItem, location: Option<&SourceLocation>) -> bool {
+    let Some(location) = location else {
+        return true;
+    };
+
+    item.file == location.file
+        && item.line == location.line
+        && location
+            .column
+            .map(|column| item.column == 0 || item.column == column)
+            .unwrap_or(true)
 }
 
 #[cfg(test)]
@@ -430,6 +465,40 @@ mod tests {
         parse_markdown_status(temp_dir.path(), &mut db, "$$").unwrap();
 
         assert_eq!(db.items[0].status, "done");
+        assert_eq!(db.items[0].content, "Fix bug");
+    }
+
+    #[test]
+    fn test_parse_markdown_status_ignores_mismatched_location_for_staged_file() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
+
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
+        fs::write(
+            &md_path,
+            "- [x] $$todo:1:done - tests/TEST.md:35:4 - Fix bug\n",
+        )
+        .unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 1,
+            item_type: "todo".to_string(),
+            file: "TEST.md".to_string(),
+            line: 35,
+            column: 4,
+            status: "open".to_string(),
+            content: "Fix bug".to_string(),
+        });
+
+        parse_markdown_status_for_files(temp_dir.path(), &mut db, "$$", &["TEST.md".to_string()])
+            .unwrap();
+
+        assert_eq!(db.items[0].status, "open");
         assert_eq!(db.items[0].content, "Fix bug");
     }
 

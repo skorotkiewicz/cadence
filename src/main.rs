@@ -46,7 +46,7 @@ fn main() -> Result<()> {
             let staged_source_files = staged_source_files(&staged.files);
 
             // Step 1: Parse markdown for status changes FIRST (to get user edits)
-            parse_markdown_status_for_files(&cwd, &mut db, &marker_prefix, &staged.files)?;
+            parse_markdown_status_for_files(&cwd, &mut db, &marker_prefix, &staged_source_files)?;
 
             // Step 2: Update source files with those status changes
             update_source_files_for_files(&cwd, &db, &marker_prefix, &staged_source_files)?;
