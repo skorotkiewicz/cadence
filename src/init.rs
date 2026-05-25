@@ -22,11 +22,11 @@ pub fn init_cadence(dir: &Path) -> Result<()> {
     // Create schemas.yml with default schemas
     let schemas_content = r#"# Marker schemas
 todo:
-  statuses: ["open", "done", "in-progress"]
+  statuses: ["open:[ ]", "done:[x]", "in-progress:[~]"]
 fixme:
-  statuses: ["open", "done"]
+  statuses: ["open:[ ]", "done:[x]"]
 hack:
-  statuses: ["open", "done"]
+  statuses: ["open:[ ]", "done:[x]"]
 "#;
     fs::write(cadence_dir.join("schemas.yml"), schemas_content)
         .with_context(|| "Failed to write schemas.yml")?;

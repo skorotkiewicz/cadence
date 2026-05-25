@@ -4,6 +4,7 @@ pub mod db;
 pub mod init;
 pub mod markdown;
 pub mod scanner;
+pub mod schema;
 pub mod sync;
 pub mod updater;
 
@@ -15,5 +16,6 @@ pub use markdown::{
     generate_markdown_files, parse_markdown_status, parse_markdown_status_for_files,
 };
 pub use scanner::{Marker, find_markers};
+pub use schema::{MarkerSchema, Schemas, StatusSchema, load_schemas};
 pub use sync::{update_source_files, update_source_files_for_files};
 pub use updater::update_files_with_ids;

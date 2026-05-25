@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::db::{Database, DbItem};
+use crate::schema::{Schemas, fallback_status_for_markdown, load_schemas};
 use std::collections::HashMap;
 
 struct ParsedMarkdownItem {
@@ -15,6 +16,7 @@ struct ParsedMarkdownItem {
 /// Generate markdown files from database items
 pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -> Result<()> {
     let cadence_dir = dir.join(".cadence");
+    let schemas = load_schemas(dir)?;
 
     // Group items by type
     let mut by_type: HashMap<String, Vec<&DbItem>> = HashMap::new();
@@ -31,7 +33,7 @@ pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -
         let mut content = String::new();
 
         for item in items {
-            let checked = if item.status == "done" { "[x]" } else { "[ ]" };
+            let checked = schemas.markdown_for_status(&item.item_type, &item.status);
             let marker = format!(
                 "{}{}:{}:{}",
                 marker_prefix, item.item_type, item.id, item.status
@@ -74,6 +76,7 @@ fn parse_markdown_status_filtered(
     files: Option<&[String]>,
 ) -> Result<()> {
     let cadence_dir = dir.join(".cadence");
+    let schemas = load_schemas(dir)?;
 
     // Read each markdown file
     for entry in fs::read_dir(&cadence_dir)? {
@@ -87,7 +90,7 @@ fn parse_markdown_status_filtered(
 
             let mut current_item: Option<ParsedMarkdownItem> = None;
             for line in content.lines() {
-                if let Some(item) = parse_markdown_item_line(line, marker_prefix) {
+                if let Some(item) = parse_markdown_item_line(line, marker_prefix, &schemas) {
                     if let Some(item) = current_item.take() {
                         apply_markdown_item(db, &type_name, item, files);
                     }
@@ -107,31 +110,31 @@ fn parse_markdown_status_filtered(
     Ok(())
 }
 
-fn parse_markdown_item_line(line: &str, marker_prefix: &str) -> Option<ParsedMarkdownItem> {
+fn parse_markdown_item_line(
+    line: &str,
+    marker_prefix: &str,
+    schemas: &Schemas,
+) -> Option<ParsedMarkdownItem> {
     let rest = line.strip_prefix("- [")?;
     let (checkbox, rest) = rest.split_once(']')?;
-    let status = match checkbox {
-        "x" | "X" => "done",
-        " " => "open",
-        _ => return None,
-    };
+    let checkbox = format!("[{}]", checkbox);
 
     let marker_start = rest.find(marker_prefix)?;
     let marker = &rest[marker_start + marker_prefix.len()..];
     let (item_type, marker) = marker.split_once(':')?;
     let (id, marker) = marker.split_once(':')?;
     let id = id.parse::<u64>().ok()?;
-    let content = marker
-        .split_once(" - ")
-        .map(|(_, content)| content)
-        .unwrap_or("")
-        .to_string();
+    let (marker_status, content) = marker.split_once(" - ").unwrap_or((marker, ""));
+    let status = schemas
+        .status_for_markdown(item_type, &checkbox)
+        .or_else(|| fallback_status_for_markdown(&checkbox).map(str::to_string))
+        .unwrap_or_else(|| marker_status.to_string());
 
     Some(ParsedMarkdownItem {
         id,
         item_type: item_type.to_string(),
-        status: status.to_string(),
-        content,
+        status,
+        content: content.to_string(),
     })
 }
 
@@ -246,6 +249,35 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_markdown_uses_schema_status_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::write(
+            temp_dir.path().join(".cadence").join("schemas.yml"),
+            r#"todo:
+  statuses: ["open:[ ]", "done:[X]", "in-progress:[Q]"]
+"#,
+        )
+        .unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 2,
+            item_type: "todo".to_string(),
+            file: "src/lib.rs".to_string(),
+            line: 20,
+            status: "in-progress".to_string(),
+            content: "Done task".to_string(),
+        });
+
+        generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
+
+        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let content = fs::read_to_string(&md_path).unwrap();
+        assert!(content.contains("- [Q] $$todo:2:in-progress - Done task"));
+    }
+
+    #[test]
     fn test_generate_markdown_multiline_content() {
         let temp_dir = TempDir::new().unwrap();
         fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
@@ -315,6 +347,36 @@ mod tests {
         parse_markdown_status(temp_dir.path(), &mut db, "@@").unwrap();
 
         assert_eq!(db.items[0].status, "done");
+    }
+
+    #[test]
+    fn test_parse_markdown_status_uses_schema_status_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::write(
+            temp_dir.path().join(".cadence").join("schemas.yml"),
+            r#"todo:
+  statuses: ["open:[ ]", "done:[X]", "in-progress:[Q]"]
+"#,
+        )
+        .unwrap();
+
+        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        fs::write(&md_path, "- [Q] $$todo:1:open - Fix bug\n").unwrap();
+
+        let mut db = Database::default();
+        db.items.push(DbItem {
+            id: 1,
+            item_type: "todo".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 10,
+            status: "open".to_string(),
+            content: "Fix bug".to_string(),
+        });
+
+        parse_markdown_status(temp_dir.path(), &mut db, "$$").unwrap();
+
+        assert_eq!(db.items[0].status, "in-progress");
     }
 
     #[test]

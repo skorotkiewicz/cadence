@@ -69,6 +69,13 @@ Add notes below any Markdown item; Cadence keeps them with that item:
 - [x] $$todo:4:open - more daleks!
 ```
 
+Customize checklist markers in `.cadence/schemas.yml`:
+
+```yml
+todo:
+  statuses: ["open:[ ]", "done:[X]", "in-progress:[Q]"]
+```
+
 ## Commands
 
 ```sh
