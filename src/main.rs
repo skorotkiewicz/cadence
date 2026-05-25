@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use cadence::{
     generate_markdown_files, init_cadence, load_db, load_marker_prefix, load_staged,
     parse_markdown_status, save_db, save_staged, update_files_with_ids, update_source_files,
@@ -15,6 +15,14 @@ fn main() -> Result<()> {
             println!("Cadence initialized in .cadence/");
         }
         cadence::Commands::Add { path } => {
+            let full_path = cwd.join(&path);
+            if !full_path.exists() {
+                bail!("Path does not exist: {}", path);
+            }
+            if !full_path.is_file() {
+                bail!("Path is not a file: {}", path);
+            }
+
             let mut staged = load_staged(&cwd)?;
             if !staged.files.contains(&path) {
                 staged.files.push(path.clone());
