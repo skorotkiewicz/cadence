@@ -14,7 +14,7 @@ into stable, checkable items:
 // $$todo:1:open handle empty input
 ```
 
-and mirrors them to Markdown in `.cadence/todo.md`.
+and mirrors them to Markdown in `.cadence/items/todo.md`.
 
 ## Install
 
@@ -51,7 +51,7 @@ Cadence assigns IDs in the source file and writes Markdown checklists:
 - [ ] $$todo:1:open - handle empty input
 ```
 
-Check an item in `.cadence/*.md`, then run:
+Check an item in `.cadence/items/*.md`, then run:
 
 ```sh
 cadence commit
@@ -93,5 +93,6 @@ cadence reset          # clear staged files
   schemas.yml          # default marker types
   db.json              # tracked items
   staged.json          # staged files
-  <type>.md            # generated checklist
+  items/
+    <type>.md          # generated checklist
 ```

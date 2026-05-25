@@ -31,6 +31,10 @@ hack:
     fs::write(cadence_dir.join("schemas.yml"), schemas_content)
         .with_context(|| "Failed to write schemas.yml")?;
 
+    // Create generated item markdown directory
+    fs::create_dir_all(cadence_dir.join("items"))
+        .with_context(|| "Failed to create items directory")?;
+
     // Create empty db.json
     let db_content = r#"{"counter": 0, "items": []}"#;
     fs::write(cadence_dir.join("db.json"), db_content)
@@ -82,6 +86,16 @@ mod tests {
         let content = fs::read_to_string(schemas_path).unwrap();
         assert!(content.contains("todo:"));
         assert!(content.contains("fixme:"));
+    }
+
+    #[test]
+    fn test_init_creates_items_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        init_cadence(temp_dir.path()).unwrap();
+
+        let items_path = temp_dir.path().join(".cadence").join("items");
+        assert!(items_path.exists());
+        assert!(items_path.is_dir());
     }
 
     #[test]

@@ -19,7 +19,11 @@ fn commit_without_staged_files_is_noop() {
     assert!(run_cadence(&temp_dir, &["add", "main.rs"]).status.success());
     assert!(run_cadence(&temp_dir, &["commit"]).status.success());
 
-    let md_path = temp_dir.path().join(".cadence").join("todo.md");
+    let md_path = temp_dir
+        .path()
+        .join(".cadence")
+        .join("items")
+        .join("todo.md");
     fs::write(&md_path, "- [x] $$todo:1:done - test\n").unwrap();
 
     let output = run_cadence(&temp_dir, &["commit"]);
@@ -45,7 +49,11 @@ fn commit_applies_markdown_status_only_to_staged_files() {
     assert!(run_cadence(&temp_dir, &["add", "b.rs"]).status.success());
     assert!(run_cadence(&temp_dir, &["commit"]).status.success());
 
-    let md_path = temp_dir.path().join(".cadence").join("todo.md");
+    let md_path = temp_dir
+        .path()
+        .join(".cadence")
+        .join("items")
+        .join("todo.md");
     fs::write(
         &md_path,
         "- [x] $$todo:1:done - first\n- [x] $$todo:2:done - second\n",
@@ -86,7 +94,11 @@ fixme:
     assert!(run_cadence(&temp_dir, &["add", "main.rs"]).status.success());
     assert!(run_cadence(&temp_dir, &["commit"]).status.success());
 
-    let md_path = temp_dir.path().join(".cadence").join("fixme.md");
+    let md_path = temp_dir
+        .path()
+        .join(".cadence")
+        .join("items")
+        .join("fixme.md");
     fs::write(&md_path, "- [~] $$fixme:1:open - avoid duplicate work\n").unwrap();
 
     assert!(run_cadence(&temp_dir, &["add", "main.rs"]).status.success());
@@ -121,7 +133,11 @@ fn commit_rejects_unknown_custom_schema_marker_in_markdown() {
     assert!(run_cadence(&temp_dir, &["add", "main.rs"]).status.success());
     assert!(run_cadence(&temp_dir, &["commit"]).status.success());
 
-    let md_path = temp_dir.path().join(".cadence").join("fixme.md");
+    let md_path = temp_dir
+        .path()
+        .join(".cadence")
+        .join("items")
+        .join("fixme.md");
     fs::write(&md_path, "- [~] $$fixme:1:open - avoid duplicate work\n").unwrap();
 
     assert!(run_cadence(&temp_dir, &["add", "main.rs"]).status.success());

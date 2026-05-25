@@ -17,7 +17,9 @@ struct ParsedMarkdownItem {
 
 /// Generate markdown files from database items
 pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -> Result<()> {
-    let cadence_dir = dir.join(".cadence");
+    let items_dir = dir.join(".cadence").join("items");
+    fs::create_dir_all(&items_dir)
+        .with_context(|| format!("Failed to create directory: {:?}", items_dir))?;
     let schemas = load_schemas(dir)?;
 
     // Group items by type
@@ -31,7 +33,7 @@ pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -
 
     // Generate markdown for each type
     for (type_name, items) in by_type {
-        let md_path = cadence_dir.join(format!("{}.md", type_name));
+        let md_path = items_dir.join(format!("{}.md", type_name));
         let mut content = String::new();
 
         for item in items {
@@ -77,11 +79,15 @@ fn parse_markdown_status_filtered(
     marker_prefix: &str,
     files: Option<&[String]>,
 ) -> Result<()> {
-    let cadence_dir = dir.join(".cadence");
+    let items_dir = dir.join(".cadence").join("items");
+    if !items_dir.exists() {
+        return Ok(());
+    }
+
     let schemas = load_schemas(dir)?;
 
     // Read each markdown file
-    for entry in fs::read_dir(&cadence_dir)? {
+    for entry in fs::read_dir(&items_dir)? {
         let entry = entry?;
         let path = entry.path();
 
@@ -206,7 +212,7 @@ mod tests {
     #[test]
     fn test_generate_markdown_creates_file() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
         let mut db = Database::default();
         db.items.push(DbItem {
@@ -220,7 +226,11 @@ mod tests {
 
         generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         assert!(md_path.exists());
 
         let content = fs::read_to_string(&md_path).unwrap();
@@ -231,7 +241,7 @@ mod tests {
     #[test]
     fn test_generate_markdown_done_status() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
         let mut db = Database::default();
         db.items.push(DbItem {
@@ -245,7 +255,11 @@ mod tests {
 
         generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         let content = fs::read_to_string(&md_path).unwrap();
         assert!(content.contains("[x]"));
     }
@@ -253,7 +267,7 @@ mod tests {
     #[test]
     fn test_generate_markdown_uses_marker_prefix() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
         let mut db = Database::default();
         db.items.push(DbItem {
@@ -267,7 +281,11 @@ mod tests {
 
         generate_markdown_files(temp_dir.path(), &db, "@@").unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         let content = fs::read_to_string(&md_path).unwrap();
         assert!(content.contains("@@todo:2:done"));
         assert!(!content.contains("$$todo:2:done"));
@@ -276,7 +294,7 @@ mod tests {
     #[test]
     fn test_generate_markdown_uses_schema_status_marker() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
         fs::write(
             temp_dir.path().join(".cadence").join("schemas.yml"),
             r#"todo:
@@ -297,7 +315,11 @@ mod tests {
 
         generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         let content = fs::read_to_string(&md_path).unwrap();
         assert!(content.contains("- [Q] $$todo:2:in-progress - Done task"));
     }
@@ -305,7 +327,7 @@ mod tests {
     #[test]
     fn test_generate_markdown_multiline_content() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
         let mut db = Database::default();
         db.items.push(DbItem {
@@ -319,7 +341,11 @@ mod tests {
 
         generate_markdown_files(temp_dir.path(), &db, "$$").unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         let content = fs::read_to_string(&md_path).unwrap();
         assert_eq!(
             content,
@@ -330,10 +356,14 @@ mod tests {
     #[test]
     fn test_parse_markdown_status_updates_db() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
         // Create markdown file
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         fs::write(&md_path, "- [x] $$todo:1:done - Fix bug\n").unwrap();
 
         let mut db = Database::default();
@@ -354,9 +384,13 @@ mod tests {
     #[test]
     fn test_parse_markdown_status_uses_marker_prefix() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         fs::write(&md_path, "- [x] @@todo:1:done - Fix bug\n").unwrap();
 
         let mut db = Database::default();
@@ -377,7 +411,7 @@ mod tests {
     #[test]
     fn test_parse_markdown_status_uses_schema_status_marker() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
         fs::write(
             temp_dir.path().join(".cadence").join("schemas.yml"),
             r#"todo:
@@ -386,7 +420,11 @@ mod tests {
         )
         .unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         fs::write(&md_path, "- [Q] $$todo:1:open - Fix bug\n").unwrap();
 
         let mut db = Database::default();
@@ -407,9 +445,13 @@ mod tests {
     #[test]
     fn test_parse_markdown_multiline_content_updates_db() {
         let temp_dir = TempDir::new().unwrap();
-        fs::create_dir_all(temp_dir.path().join(".cadence")).unwrap();
+        fs::create_dir_all(temp_dir.path().join(".cadence").join("items")).unwrap();
 
-        let md_path = temp_dir.path().join(".cadence").join("todo.md");
+        let md_path = temp_dir
+            .path()
+            .join(".cadence")
+            .join("items")
+            .join("todo.md");
         fs::write(
             &md_path,
             concat!(
