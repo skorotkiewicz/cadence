@@ -6,7 +6,32 @@ use crate::db::Database;
 
 /// Update source files with new statuses from database
 pub fn update_source_files(dir: &Path, db: &Database, marker_prefix: &str) -> Result<()> {
+    update_source_files_filtered(dir, db, marker_prefix, None)
+}
+
+pub fn update_source_files_for_files(
+    dir: &Path,
+    db: &Database,
+    marker_prefix: &str,
+    files: &[String],
+) -> Result<()> {
+    update_source_files_filtered(dir, db, marker_prefix, Some(files))
+}
+
+fn update_source_files_filtered(
+    dir: &Path,
+    db: &Database,
+    marker_prefix: &str,
+    files: Option<&[String]>,
+) -> Result<()> {
     for item in &db.items {
+        if files
+            .map(|files| !files.contains(&item.file))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
         let file_path = dir.join(&item.file);
         if !file_path.exists() {
             continue;

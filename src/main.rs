@@ -1,7 +1,8 @@
 use anyhow::{Result, bail};
 use cadence::{
     generate_markdown_files, init_cadence, load_db, load_marker_prefix, load_staged,
-    parse_markdown_status, save_db, save_staged, update_files_with_ids, update_source_files,
+    parse_markdown_status_for_files, save_db, save_staged, update_files_with_ids,
+    update_source_files_for_files,
 };
 use clap::Parser;
 
@@ -34,14 +35,19 @@ fn main() -> Result<()> {
         }
         cadence::Commands::Commit => {
             let mut staged = load_staged(&cwd)?;
+            if staged.files.is_empty() {
+                println!("Nothing staged");
+                return Ok(());
+            }
+
             let mut db = load_db(&cwd)?;
             let marker_prefix = load_marker_prefix(&cwd)?;
 
             // Step 1: Parse markdown for status changes FIRST (to get user edits)
-            parse_markdown_status(&cwd, &mut db, &marker_prefix)?;
+            parse_markdown_status_for_files(&cwd, &mut db, &marker_prefix, &staged.files)?;
 
             // Step 2: Update source files with those status changes
-            update_source_files(&cwd, &db, &marker_prefix)?;
+            update_source_files_for_files(&cwd, &db, &marker_prefix, &staged.files)?;
 
             // Step 3: Update files with new IDs for unmarked markers
             update_files_with_ids(&cwd, &staged.files, &mut db, &marker_prefix)?;
@@ -53,10 +59,15 @@ fn main() -> Result<()> {
             generate_markdown_files(&cwd, &db, &marker_prefix)?;
 
             // Step 6: Clear staged files
+            let committed_items = db
+                .items
+                .iter()
+                .filter(|item| staged.files.contains(&item.file))
+                .count();
             staged.files.clear();
             save_staged(&cwd, &staged)?;
 
-            println!("Committed {} items", db.items.len());
+            println!("Committed {} items", committed_items);
         }
         cadence::Commands::Reset => {
             let mut staged = load_staged(&cwd)?;

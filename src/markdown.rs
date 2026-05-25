@@ -55,6 +55,24 @@ pub fn generate_markdown_files(dir: &Path, db: &Database, marker_prefix: &str) -
 
 /// Parse markdown file and return updated statuses
 pub fn parse_markdown_status(dir: &Path, db: &mut Database, marker_prefix: &str) -> Result<()> {
+    parse_markdown_status_filtered(dir, db, marker_prefix, None)
+}
+
+pub fn parse_markdown_status_for_files(
+    dir: &Path,
+    db: &mut Database,
+    marker_prefix: &str,
+    files: &[String],
+) -> Result<()> {
+    parse_markdown_status_filtered(dir, db, marker_prefix, Some(files))
+}
+
+fn parse_markdown_status_filtered(
+    dir: &Path,
+    db: &mut Database,
+    marker_prefix: &str,
+    files: Option<&[String]>,
+) -> Result<()> {
     let cadence_dir = dir.join(".cadence");
 
     // Read each markdown file
@@ -71,7 +89,7 @@ pub fn parse_markdown_status(dir: &Path, db: &mut Database, marker_prefix: &str)
             for line in content.lines() {
                 if let Some(item) = parse_markdown_item_line(line, marker_prefix) {
                     if let Some(item) = current_item.take() {
-                        apply_markdown_item(db, &type_name, item);
+                        apply_markdown_item(db, &type_name, item, files);
                     }
 
                     current_item = Some(item);
@@ -81,7 +99,7 @@ pub fn parse_markdown_status(dir: &Path, db: &mut Database, marker_prefix: &str)
             }
 
             if let Some(item) = current_item.take() {
-                apply_markdown_item(db, &type_name, item);
+                apply_markdown_item(db, &type_name, item, files);
             }
         }
     }
@@ -130,16 +148,23 @@ fn append_continuation_line(content: &mut String, line: &str) {
     content.push_str(line);
 }
 
-fn apply_markdown_item(db: &mut Database, type_name: &str, parsed: ParsedMarkdownItem) {
+fn apply_markdown_item(
+    db: &mut Database,
+    type_name: &str,
+    parsed: ParsedMarkdownItem,
+    files: Option<&[String]>,
+) {
     if parsed.item_type != type_name {
         return;
     }
 
-    if let Some(item) = db
-        .items
-        .iter_mut()
-        .find(|item| item.id == parsed.id && item.item_type == type_name)
-    {
+    if let Some(item) = db.items.iter_mut().find(|item| {
+        item.id == parsed.id
+            && item.item_type == type_name
+            && files
+                .map(|files| files.contains(&item.file))
+                .unwrap_or(true)
+    }) {
         item.status = parsed.status;
         item.content = parsed.content;
     }
