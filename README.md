@@ -38,10 +38,11 @@ Add markers to any source file:
 
 The prefix comes from `.cadence/config.yml`.
 
-Stage files and commit them to Cadence:
+Stage files or directories and commit them to Cadence:
 
 ```sh
 cadence add src/main.rs
+# or: cadence add src
 cadence commit
 ```
 
@@ -80,10 +81,12 @@ todo:
 
 ```sh
 cadence init           # create .cadence/
-cadence add <path>     # stage a source file
+cadence add <path>     # stage a file or directory
 cadence commit         # sync source markers and Markdown
 cadence reset          # clear staged files
 ```
+
+`cadence add` stages directory contents recursively. `.cadence/` and its contents are never staged.
 
 ## Files
 
