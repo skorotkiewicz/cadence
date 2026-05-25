@@ -22,12 +22,6 @@ and mirrors them to Markdown in `.cadence/todo.md`.
 cargo install --path .
 ```
 
-Or run it from this checkout:
-
-```sh
-cargo run -- <command>
-```
-
 ## Quick Start
 
 ```sh
@@ -68,11 +62,11 @@ The source marker status changes from `open` to `done`.
 Add notes below any Markdown item; Cadence keeps them with that item:
 
 ```md
-- [x] $$todo:3:done - open final flux
-  add
-  support
-  for
-  multiline notes
+- [x] $$todo:3:done - final flux
+  happy
+  new
+  sommer!
+- [x] $$todo:4:open - more daleks!
 ```
 
 ## Commands
