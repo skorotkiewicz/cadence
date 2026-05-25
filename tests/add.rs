@@ -43,6 +43,60 @@ fn add_stages_existing_file() {
 }
 
 #[test]
+fn add_stages_directory_contents_recursively() {
+    let temp_dir = TempDir::new().unwrap();
+    assert!(run_cadence(&temp_dir, &["init"]).status.success());
+    fs::create_dir_all(temp_dir.path().join("src").join("nested")).unwrap();
+    fs::write(temp_dir.path().join("src").join("main.rs"), "// $$todo a\n").unwrap();
+    fs::write(
+        temp_dir.path().join("src").join("nested").join("lib.rs"),
+        "// $$todo b\n",
+    )
+    .unwrap();
+
+    let output = run_cadence(&temp_dir, &["add", "src"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Added 2 files"));
+
+    let staged = fs::read_to_string(temp_dir.path().join(".cadence").join("staged.json")).unwrap();
+    assert!(staged.contains("src/main.rs"));
+    assert!(staged.contains("src/nested/lib.rs"));
+}
+
+#[test]
+fn add_directory_skips_cadence_contents() {
+    let temp_dir = TempDir::new().unwrap();
+    assert!(run_cadence(&temp_dir, &["init"]).status.success());
+    fs::create_dir_all(temp_dir.path().join("project").join(".cadence")).unwrap();
+    fs::write(
+        temp_dir.path().join("project").join("main.rs"),
+        "// $$todo a\n",
+    )
+    .unwrap();
+    fs::write(
+        temp_dir
+            .path()
+            .join("project")
+            .join(".cadence")
+            .join("config.yml"),
+        "marker_prefix: \"$$\"\n",
+    )
+    .unwrap();
+
+    let output = run_cadence(&temp_dir, &["add", "project"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Added 1 files"));
+
+    let staged = fs::read_to_string(temp_dir.path().join(".cadence").join("staged.json")).unwrap();
+    assert!(staged.contains("project/main.rs"));
+    assert!(!staged.contains("project/.cadence/config.yml"));
+}
+
+#[test]
 fn add_rejects_cadence_directory() {
     let temp_dir = TempDir::new().unwrap();
     assert!(run_cadence(&temp_dir, &["init"]).status.success());

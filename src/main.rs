@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use cadence::{
     generate_markdown_files, init_cadence, load_db, load_marker_prefix, load_staged,
     parse_markdown_status_for_files, save_db, save_staged, update_files_with_ids,
@@ -6,7 +6,8 @@ use cadence::{
 };
 use clap::Parser;
 use std::ffi::OsStr;
-use std::path::{Component, Path};
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 
 fn main() -> Result<()> {
     let cli = cadence::Cli::parse();
@@ -18,25 +19,36 @@ fn main() -> Result<()> {
             println!("Cadence initialized in .cadence/");
         }
         cadence::Commands::Add { path } => {
-            if contains_cadence_dir(&path) {
+            if contains_cadence_dir(Path::new(&path)) {
                 bail!("Cannot stage .cadence directory or its contents");
             }
 
-            let full_path = cwd.join(&path);
-            if !full_path.exists() {
-                bail!("Path does not exist: {}", path);
-            }
-            if !full_path.is_file() {
-                bail!("Path is not a file: {}", path);
-            }
+            let stage_files = stage_files_for_path(&cwd, &path)?;
+            let is_single_file = cwd.join(&path).is_file();
 
             let mut staged = load_staged(&cwd)?;
-            if !staged.files.contains(&path) {
-                staged.files.push(path.clone());
+            let mut added = 0;
+            for file in &stage_files {
+                if !staged.files.contains(file) {
+                    staged.files.push(file.clone());
+                    added += 1;
+                }
+            }
+
+            if added > 0 {
                 save_staged(&cwd, &staged)?;
-                println!("Added: {}", path);
+            }
+
+            if is_single_file {
+                if added > 0 {
+                    println!("Added: {}", stage_files[0]);
+                } else {
+                    println!("Already staged: {}", stage_files[0]);
+                }
+            } else if added > 0 {
+                println!("Added {} files", added);
             } else {
-                println!("Already staged: {}", path);
+                println!("No new files added");
             }
         }
         cadence::Commands::Commit => {
@@ -91,13 +103,76 @@ fn main() -> Result<()> {
 fn staged_source_files(files: &[String]) -> Vec<String> {
     files
         .iter()
-        .filter(|file| !contains_cadence_dir(file))
+        .filter(|file| !contains_cadence_dir(Path::new(file)))
         .cloned()
         .collect()
 }
 
-fn contains_cadence_dir(path: &str) -> bool {
-    Path::new(path).components().any(
+fn stage_files_for_path(cwd: &Path, path: &str) -> Result<Vec<String>> {
+    let full_path = cwd.join(path);
+    if !full_path.exists() {
+        bail!("Path does not exist: {}", path);
+    }
+
+    if full_path.is_file() {
+        return Ok(vec![stage_path_string(Path::new(path))]);
+    }
+
+    if full_path.is_dir() {
+        let mut files = Vec::new();
+        collect_stage_files(cwd, &full_path, &mut files)?;
+        files.sort();
+        return Ok(files);
+    }
+
+    bail!("Path is not a file or directory: {}", path);
+}
+
+fn collect_stage_files(cwd: &Path, dir: &Path, files: &mut Vec<String>) -> Result<()> {
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("Failed to read directory: {:?}", dir))?
+    {
+        let entry = entry.with_context(|| format!("Failed to read directory entry: {:?}", dir))?;
+        let path = entry.path();
+        if contains_cadence_dir(&path) {
+            continue;
+        }
+
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("Failed to read file type: {:?}", path))?;
+        if file_type.is_dir() {
+            collect_stage_files(cwd, &path, files)?;
+        } else if file_type.is_file() {
+            let relative = path
+                .strip_prefix(cwd)
+                .with_context(|| format!("Failed to make path relative: {:?}", path))?;
+            files.push(stage_path_string(relative));
+        }
+    }
+
+    Ok(())
+}
+
+fn stage_path_string(path: &Path) -> String {
+    if path.is_absolute() {
+        return path.to_string_lossy().replace('\\', "/");
+    }
+
+    path.components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(PathBuf::from(value)),
+            Component::CurDir => None,
+            Component::ParentDir => Some(PathBuf::from("..")),
+            _ => None,
+        })
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn contains_cadence_dir(path: &Path) -> bool {
+    path.components().any(
         |component| matches!(component, Component::Normal(name) if name == OsStr::new(".cadence")),
     )
 }
