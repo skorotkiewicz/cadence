@@ -13,6 +13,7 @@ pub enum Commands {
     Init,
     Add { path: String },
     Commit,
+    Reset,
 }
 
 #[cfg(test)]
@@ -52,6 +53,18 @@ mod tests {
         match cli.command {
             Commands::Commit => (),
             _ => panic!("Expected Commit command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_reset_command() {
+        let args = vec!["cadence", "reset"];
+        let cli = Cli::try_parse_from(args);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        match cli.command {
+            Commands::Reset => (),
+            _ => panic!("Expected Reset command"),
         }
     }
 }

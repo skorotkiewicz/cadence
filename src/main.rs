@@ -49,6 +49,13 @@ fn main() -> Result<()> {
             
             println!("Committed {} items", db.items.len());
         }
+        cadence::Commands::Reset => {
+            let mut staged = load_staged(&cwd)?;
+            let count = staged.files.len();
+            staged.files.clear();
+            save_staged(&cwd, &staged)?;
+            println!("Unstaged {} files", count);
+        }
     }
     
     Ok(())
